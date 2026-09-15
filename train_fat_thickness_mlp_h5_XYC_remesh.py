@@ -33,7 +33,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, Dataset, SubsetRandomSampler
 
 from models_fat_thickness_XYC_modulated_transformer import FatThicknessMLP_basic, FatThicknessMLP, ProtocolAwareFatThicknessTransformer, load_protocol_indices_csv
-from utilities_fat_skin_thickness_XYC_fresh_calfNbone_remesh import (
+from utilities_fat_thickness_XYC_fresh_calfNbone_remesh_skin_tissuevar import (
     create_fat_muscle_boundary_polygon, create_skin_fat_muscle_boundary_polygons,
     FatThicknessH5Dataset, )
 
@@ -41,12 +41,12 @@ from utilities_fat_skin_thickness_XYC_fresh_calfNbone_remesh import (
 # =========================================================
 # Settings
 # =========================================================
-ROOT_DATA = (r"H:\temporary\output_fat_thickness\data_noise00_skin04_25_fat04_25_circum3045_fresh_remesh_propvar_10")
+ROOT_DATA = ("/mnt/Ubuntu01/lymphedema/Rizki/fat_thickness/data_simulation/data_noise00_skin04_25_fat04_25_circum3045_fresh_remesh_propvar_10")
 
 TRAIN_H5_PATH = os.path.join(ROOT_DATA, "training", "fat_dataset_training.h5")
 VAL_H5_PATH = os.path.join(ROOT_DATA, "val", "fat_dataset_val.h5")
 TEST_H5_PATH = os.path.join(ROOT_DATA, "testing", "fat_dataset_testing.h5")
-OUTPUT_DIR = os.path.join(ROOT_DATA, "results_XYC_remesh_8freqs_transformer_noise_30")
+OUTPUT_DIR = os.path.join(ROOT_DATA, "results_XYC_remesh_8freqs_transformer_noise_10")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 protocol_csv_path ='Right_calf/calf_quasi_16_0-15_stim_.csv'
@@ -69,7 +69,7 @@ print("Number of selected frequencies:", N_SELECTED_FREQUENCIES)
 # Training-time noise augmentation
 # =========================================================
 TRAIN_APPLY_NOISE = True
-TRAIN_MAX_NOISE = 0.3       # 0.10 = 10%
+TRAIN_MAX_NOISE = 0.1       # 0.10 = 10%
 TRAIN_RANDOM_NOISE_STD = True #False-> every sample receives exactly 10% noise
 TRAIN_RANDOM_NOISE = True
 
@@ -527,6 +527,14 @@ print("\nFinal test results")
 print(f"Test loss: {test_metrics['loss']:.6f}")
 print(f"Test MAE: {test_metrics['mae_mm']:.4f} mm")
 print(f"Test RMSE: {test_metrics['rmse_mm']:.4f} mm")
+
+TEST_RESULT_PATH = os.path.join(OUTPUT_DIR, "test_results.txt")
+
+with open(TEST_RESULT_PATH, "w") as f:
+    f.write("Final test results\n")
+    f.write(f"Test loss: {test_metrics['loss']:.6f}\n")
+    f.write(f"Test MAE: {test_metrics['mae_mm']:.4f} mm\n")
+    f.write(f"Test RMSE: {test_metrics['rmse_mm']:.4f} mm\n")
 # =========================================================
 # Predict and plot actual remeshed test geometries
 # =========================================================

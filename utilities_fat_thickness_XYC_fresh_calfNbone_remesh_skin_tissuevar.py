@@ -917,7 +917,7 @@ def load_calf_mesh_bank(mesh_bank_dir, reference_mesh_obj):
 # =========================================================
 # Dataset
 # =========================================================
-class FatThicknessEITDataset(Dataset):
+class FatSkinThicknessEITDataset(Dataset):
     """
     Synthetic multi-frequency EIT dataset with explicit wet skin,
     random subcutaneous-fat thickness, circumference, outer-calf shape,
@@ -953,10 +953,8 @@ class FatThicknessEITDataset(Dataset):
     Notes
     -----
     Because the node coordinates change between samples, the forward
-    solver must be constructed for each sampled circumference. Reference
-    frequency-dependent tissue curves are cached, and optional sample-level
-    conductivity/permittivity factors can vary those curves without changing
-    their frequency-dependent shape.
+    solver must be constructed for each sampled circumference. Fixed
+    frequency-dependent tissue properties are still cached.
     """
 
     def __init__(
@@ -978,7 +976,6 @@ class FatThicknessEITDataset(Dataset):
         skin_min_mm=0.5,
         skin_max_mm=2.5,
         skin_tissue="skinwet",
-        tissue_property_variation=0.0,
         bone_margin_mm=0.5,
         fixed_dataset=False,
         noise_std=0.0,  # fraction: 1% -> 0.01
@@ -1005,7 +1002,7 @@ class FatThicknessEITDataset(Dataset):
         seed=None,
     ):
         if EITForward is None:
-            raise ImportError("pyEIT is required for FatThicknessEITDataset.")
+            raise ImportError("pyEIT is required for FatSkinThicknessEITDataset.")
         if num_samples <= 0:
             raise ValueError("num_samples must be positive.")
         if fat_max_mm <= fat_min_mm:
@@ -1052,7 +1049,6 @@ class FatThicknessEITDataset(Dataset):
         self.skin_min_mm = float(skin_min_mm)
         self.skin_max_mm = float(skin_max_mm)
         self.skin_tissue = str(skin_tissue).strip().lower()
-        self.tissue_property_variation = float(tissue_property_variation)
         self.bone_margin_mm = float(bone_margin_mm)
         self.fixed_dataset = bool(fixed_dataset)
         self.noise_std = float(noise_std)
@@ -1088,8 +1084,6 @@ class FatThicknessEITDataset(Dataset):
 
         if self.noise_std < 0.0:
             raise ValueError("noise_std must be non-negative.")
-        if not 0.0 <= self.tissue_property_variation < 1.0:
-            raise ValueError("tissue_property_variation must be in [0, 1).")
         if self.geometry_max_attempts <= 0:
             raise ValueError("geometry_max_attempts must be positive.")
         if self.bone_shift_max_mm < 0.0 or self.bone_rotation_max_deg < 0.0:
@@ -1258,42 +1252,6 @@ class FatThicknessEITDataset(Dataset):
             )
 
         return values_by_tissue
-
-    # -----------------------------------------------------
-    # Sample-dependent tissue electrical properties
-    # -----------------------------------------------------
-    def sample_tissue_property_factors(self):
-        """
-        Sample one conductivity and permittivity scale per tissue.
-
-        Each factor is shared across all frequencies for the current sample,
-        preserving the reference frequency-response curve while introducing
-        subject-to-subject tissue-property variability.
-        """
-        tissue_names = (
-            self.skin_tissue,
-            "fat",
-            "muscle",
-            "bonecortical",
-        )
-
-        factors = {}
-        for tissue_name in tissue_names:
-            if self.tissue_property_variation > 0.0:
-                low = 1.0 - self.tissue_property_variation
-                high = 1.0 + self.tissue_property_variation
-                conductivity_factor = self.rng.uniform(low, high)
-                permittivity_factor = self.rng.uniform(low, high)
-            else:
-                conductivity_factor = 1.0
-                permittivity_factor = 1.0
-
-            factors[tissue_name] = {
-                "conductivity": float(conductivity_factor),
-                "permittivity": float(permittivity_factor),
-            }
-
-        return factors
 
     # -----------------------------------------------------
     # Random physical parameters
@@ -1787,31 +1745,20 @@ class FatThicknessEITDataset(Dataset):
         self,
         tissue_masks,
         frequency_index,
-        tissue_property_factors,
     ):
         """Build element-wise admittivity for one frequency."""
         n_elements = len(tissue_masks["outside"])
         elem_adm = np.empty(n_elements, dtype=np.complex128)
 
-        def varied_value(tissue_name):
-            base_value = self.tissue_admittivity[tissue_name][frequency_index]
-            factors = tissue_property_factors[tissue_name]
-            real_part = base_value.real * factors["conductivity"]
-            imag_part = base_value.imag * factors["permittivity"]
-            return real_part + 1j * imag_part
-
-        skin_value = varied_value(self.skin_tissue)
-        fat_value = varied_value("fat")
-        muscle_value = varied_value("muscle")
-        bone_value = varied_value("bonecortical")
+        skin_value = self.tissue_admittivity[self.skin_tissue][frequency_index]
 
         # Fresh meshes should contain only calf-interior triangles; the
         # outside assignment is retained as a numerical fallback.
         elem_adm[tissue_masks["outside"]] = skin_value
         elem_adm[tissue_masks["skin"]] = skin_value
-        elem_adm[tissue_masks["fat"]] = fat_value
-        elem_adm[tissue_masks["muscle"]] = muscle_value
-        elem_adm[tissue_masks["bone"]] = bone_value
+        elem_adm[tissue_masks["fat"]] = self.tissue_admittivity["fat"][frequency_index]
+        elem_adm[tissue_masks["muscle"]] = self.tissue_admittivity["muscle"][frequency_index]
+        elem_adm[tissue_masks["bone"]] = self.tissue_admittivity["bonecortical"][frequency_index]
         return elem_adm
 
     def _create_numeric_tissue_labels(self, tissue_masks):
@@ -1868,7 +1815,6 @@ class FatThicknessEITDataset(Dataset):
     # -----------------------------------------------------
     def _generate_sample(self, return_details=False):
         sampled_circumference_mm = self.sample_circumference()
-        tissue_property_factors = self.sample_tissue_property_factors()
 
         requested_skin_mm = self.sample_skin_thickness()
         requested_fat_mm = self.sample_fat_thickness(
@@ -1922,7 +1868,6 @@ class FatThicknessEITDataset(Dataset):
             elem_adm = self._build_element_admittivity(
                 tissue_masks=tissue_masks,
                 frequency_index=frequency_index,
-                tissue_property_factors=tissue_property_factors,
             )
 
             voltage = self._solve_with_admittivity(
@@ -1975,8 +1920,6 @@ class FatThicknessEITDataset(Dataset):
             "skin_thickness_mm": effective_skin_mm,
             "skin_clipped": skin_clipped,
             "skin_tissue": self.skin_tissue,
-            "tissue_property_variation": np.float32(self.tissue_property_variation),
-            "tissue_property_factors": tissue_property_factors,
             "requested_fat_mm": requested_fat_mm,
             "effective_fat_mm": effective_fat_mm,
             "fat_thickness_mm": effective_fat_mm,
@@ -2119,8 +2062,6 @@ class FatThicknessH5Dataset(Dataset):
         self.rng = None
         if self.noise_std < 0.0:
             raise ValueError("noise_std must be non-negative.")
-        if not 0.0 <= self.tissue_property_variation < 1.0:
-            raise ValueError("tissue_property_variation must be in [0, 1).")
         # Base seed used to initialize RNG separately
         # inside each DataLoader worker.
         # ---------------------------------------------
