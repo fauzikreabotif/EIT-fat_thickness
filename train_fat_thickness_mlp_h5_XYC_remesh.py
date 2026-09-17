@@ -46,7 +46,7 @@ ROOT_DATA = ("/mnt/Ubuntu01/lymphedema/Rizki/fat_thickness/data_simulation/data_
 TRAIN_H5_PATH = os.path.join(ROOT_DATA, "training", "fat_dataset_training.h5")
 VAL_H5_PATH = os.path.join(ROOT_DATA, "val", "fat_dataset_val.h5")
 TEST_H5_PATH = os.path.join(ROOT_DATA, "testing", "fat_dataset_testing.h5")
-OUTPUT_DIR = os.path.join(ROOT_DATA, "results_XYC_remesh_8freqs_transformer_noise_10")
+OUTPUT_DIR = os.path.join(ROOT_DATA, "results_XYC_remesh_8freqs_transformer_noise_0")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 protocol_csv_path ='Right_calf/calf_quasi_16_0-15_stim_.csv'
@@ -69,7 +69,7 @@ print("Number of selected frequencies:", N_SELECTED_FREQUENCIES)
 # Training-time noise augmentation
 # =========================================================
 TRAIN_APPLY_NOISE = True
-TRAIN_MAX_NOISE = 0.1       # 0.10 = 10%
+TRAIN_MAX_NOISE = 0.0       # 0.10 = 10%
 TRAIN_RANDOM_NOISE_STD = True #False-> every sample receives exactly 10% noise
 TRAIN_RANDOM_NOISE = True
 
@@ -572,7 +572,7 @@ def plot_test_prediction(sample_index: int):
     gt_inner_points = geometry["gt_inner_points"]
     circumference_mm = geometry["circumference_mm"]
     has_skin = geometry["has_skin"]
-    has_skin = False
+    # has_skin = False
     if has_skin:
         gt_skin_fat_boundary = geometry["skin_fat_boundary"]
         gt_skin_inner_points = geometry["gt_skin_inner_points"]
@@ -647,7 +647,47 @@ def plot_test_prediction(sample_index: int):
     figure_path = os.path.join(OUTPUT_DIR, f"test_prediction_sample_{sample_index:04d}.png")
     plt.savefig(figure_path, dpi=200, bbox_inches="tight")
     plt.show()
+    
+    
+    plt.figure(figsize=(9, 9))
+    plt.triplot(nodes[:, 0], nodes[:, 1], tri, linewidth=0.35, alpha=0.25)
 
+    if has_skin:
+        plt.fill(calf_boundary[:, 0], calf_boundary[:, 1], color="mistyrose", alpha=0.8, label="Skin")
+        plt.fill(gt_skin_fat_boundary[:, 0], gt_skin_fat_boundary[:, 1], color="khaki", alpha=0.8, label="Fat")
+        plt.fill(gt_fat_boundary[:, 0], gt_fat_boundary[:, 1], color="lightcoral", alpha=0.35, label="Muscle")
+    else:
+        plt.fill(calf_boundary[:, 0], calf_boundary[:, 1], color="khaki", alpha=0.55, label="Fat")
+        plt.fill(gt_fat_boundary[:, 0], gt_fat_boundary[:, 1], color="lightcoral", alpha=0.35, label="Muscle")
+
+    plt.fill(tibia_boundary[:, 0], tibia_boundary[:, 1], color="lightsteelblue", alpha=0.9)
+    plt.fill(fibula_boundary[:, 0], fibula_boundary[:, 1], color="lightsteelblue", alpha=0.9)
+    plt.plot(calf_boundary[:, 0], calf_boundary[:, 1], "k-", linewidth=2.5, label="Calf surface")
+
+    if has_skin:
+        plt.plot(gt_skin_fat_boundary[:, 0], gt_skin_fat_boundary[:, 1], "m-", linewidth=2.2, label="Skin-fat boundary")
+
+    plt.plot(gt_fat_boundary[:, 0], gt_fat_boundary[:, 1], "r-", linewidth=2.5, label="GT fat-muscle")
+    plt.plot(tibia_boundary[:, 0], tibia_boundary[:, 1], "b-", linewidth=1.8, label="Tibia")
+    plt.plot(fibula_boundary[:, 0], fibula_boundary[:, 1], "c-", linewidth=1.8, label="Fibula")
+
+    if has_skin:
+        for p0, p1 in zip(gt_outer_points, gt_skin_inner_points):
+            plt.plot([p0[0], p1[0]], [p0[1], p1[1]], "m-", linewidth=1.3, alpha=0.8)
+
+    for electrode_index, (p0, p1) in enumerate(zip(fat_line_start, gt_inner_points)):
+        plt.plot([p0[0], p1[0]], [p0[1], p1[1]], "r-", linewidth=1.8)
+        plt.text(p1[0], p1[1], f"E{electrode_index + 1}\nGT: {gt_effective_mm[electrode_index]:.1f}", fontsize=11, ha="center", va="center", bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 1.5})
+
+    plt.scatter(electrode_xy[:, 0], electrode_xy[:, 1], edgecolors="black", linewidths=1.2, s=110, zorder=5)
+
+    anatomy_text = "Skin + Fat" if has_skin else "Fat only"
+    plt.title(f"{MODEL_TYPE} Fat-Thickness Prediction on Remeshed Geometry\n{anatomy_text} | Sample {sample_index} | C = {circumference_mm:.1f} mm | MAE = {sample_mae:.3f} mm | RMSE = {sample_rmse:.3f} mm", fontsize=15)
+    plt.axis("equal")
+    plt.axis("off")
+    plt.legend(loc="upper left", fontsize=11)
+    plt.tight_layout()
+    plt.show()
 
 plot_end = min(len(test_dataset), TEST_PLOT_START_INDEX + NUMBER_OF_TEST_PLOTS)
 
