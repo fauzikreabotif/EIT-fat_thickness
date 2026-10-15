@@ -41,15 +41,16 @@ from utilities_fat_thickness_XYC_fresh_calfNbone_remesh_skin_tissuevar import (
 # =========================================================
 # Settings
 # =========================================================
-ROOT_DATA = ("/mnt/Ubuntu01/lymphedema/Rizki/fat_thickness/data_simulation/data_noise00_skin04_25_fat04_25_circum3045_fresh_remesh_propvar_10")
+ROOT_DATA = ("/mnt/Ubuntu01/lymphedema/Rizki/fat_thickness/data_simulation/data_noise00_skin04_25_fat04_25_circum3045_fresh_remesh_propvar_10/Right-Left")
 
-TRAIN_H5_PATH = os.path.join(ROOT_DATA, "training", "fat_dataset_training.h5")
-VAL_H5_PATH = os.path.join(ROOT_DATA, "val", "fat_dataset_val.h5")
-TEST_H5_PATH = os.path.join(ROOT_DATA, "testing", "fat_dataset_testing.h5")
-OUTPUT_DIR = os.path.join(ROOT_DATA, "results_XYC_remesh_8freqs_transformer_noise_0")
+TRAIN_H5_PATH = os.path.join(ROOT_DATA, "training", "fat_dataset_training_bilateral.h5")
+VAL_H5_PATH = os.path.join(ROOT_DATA, "val", "fat_dataset_val_bilateral.h5")
+TEST_H5_PATH = os.path.join(ROOT_DATA, "testing", "fat_dataset_testing_bilateral.h5")
+OUTPUT_DIR = os.path.join(ROOT_DATA, "results_XYC_remesh_8freqs_transformer_noise_30")
+TRAIN_MAX_NOISE = 0.3       # 0.10 = 10%
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-protocol_csv_path ='Right_calf/calf_quasi_16_0-15_stim_.csv'
+protocol_csv_path ='new_bilateral/calf_quasi_16_0-15_stim_.csv'
 
 #================  Model ==============
 flatten_input=False
@@ -69,7 +70,6 @@ print("Number of selected frequencies:", N_SELECTED_FREQUENCIES)
 # Training-time noise augmentation
 # =========================================================
 TRAIN_APPLY_NOISE = True
-TRAIN_MAX_NOISE = 0.0       # 0.10 = 10%
 TRAIN_RANDOM_NOISE_STD = True #False-> every sample receives exactly 10% noise
 TRAIN_RANDOM_NOISE = True
 
@@ -137,6 +137,10 @@ def load_test_geometry(h5_path, sample_index):
     f = h5py.File(h5_path, "r")
 
     geometry = {}
+    try:
+        geometry["side"] = f["side"].asstr()[sample_index]
+    except:
+        geometry["side"] = ''
     geometry["nodes"] = np.asarray(load_packed_geometry(f, "mesh_nodes", "mesh_nodes_offsets", sample_index))
     geometry["elements"] = np.asarray(load_packed_geometry(f, "mesh_elements", "mesh_elements_offsets", sample_index), dtype=np.int64)
     geometry["calf_boundary"] = np.asarray(load_packed_geometry(f, "calf_boundary_points", "calf_boundary_points_offsets", sample_index))
@@ -534,7 +538,7 @@ with open(TEST_RESULT_PATH, "w") as f:
     f.write("Final test results\n")
     f.write(f"Test loss: {test_metrics['loss']:.6f}\n")
     f.write(f"Test MAE: {test_metrics['mae_mm']:.4f} mm\n")
-    f.write(f"Test RMSE: {test_metrics['rmse_mm']:.4f} mm\n")
+
 # =========================================================
 # Predict and plot actual remeshed test geometries
 # =========================================================
@@ -560,7 +564,8 @@ def plot_test_prediction(sample_index: int):
     predicted_fat_mm, ground_truth_fat_mm = predict_one_test_sample(sample_index)
     predicted_fat_for_geometry = np.maximum(predicted_fat_mm, 0.0)
     geometry = load_test_geometry(TEST_H5_PATH, sample_index)
-
+    
+    side = geometry["side"]
     nodes = geometry["nodes"]
     tri = geometry["elements"]
     calf_boundary = geometry["calf_boundary"]
@@ -638,17 +643,25 @@ def plot_test_prediction(sample_index: int):
     plt.scatter(electrode_xy[:, 0], electrode_xy[:, 1], edgecolors="black", linewidths=1.2, s=110, zorder=5)
 
     anatomy_text = "Skin + Fat" if has_skin else "Fat only"
-    plt.title(f"{MODEL_TYPE} Fat-Thickness Prediction on Remeshed Geometry\n{anatomy_text} | Sample {sample_index} | C = {circumference_mm:.1f} mm | MAE = {sample_mae:.3f} mm | RMSE = {sample_rmse:.3f} mm", fontsize=15)
+    
+    plt.title(
+    f"{MODEL_TYPE} Fat-Thickness Prediction | {side} Calf\n"
+    f"{anatomy_text} | Sample {sample_index} | "
+    f"C = {circumference_mm:.1f} mm | "
+    f"MAE = {sample_mae:.3f} mm | "
+    f"RMSE = {sample_rmse:.3f} mm",
+    fontsize=15,)   
+    
     plt.axis("equal")
     plt.axis("off")
     plt.legend(loc="upper left", fontsize=11)
     plt.tight_layout()
 
-    figure_path = os.path.join(OUTPUT_DIR, f"test_prediction_sample_{sample_index:04d}.png")
+    figure_path = os.path.join(OUTPUT_DIR, f"test_prediction_{side.lower()}_{sample_index:04d}.png")
     plt.savefig(figure_path, dpi=200, bbox_inches="tight")
     plt.show()
     
-    
+    #================== plot only the GT
     plt.figure(figsize=(9, 9))
     plt.triplot(nodes[:, 0], nodes[:, 1], tri, linewidth=0.35, alpha=0.25)
 
@@ -677,7 +690,7 @@ def plot_test_prediction(sample_index: int):
 
     for electrode_index, (p0, p1) in enumerate(zip(fat_line_start, gt_inner_points)):
         plt.plot([p0[0], p1[0]], [p0[1], p1[1]], "r-", linewidth=1.8)
-        plt.text(p1[0], p1[1], f"E{electrode_index + 1}\nGT: {gt_effective_mm[electrode_index]:.1f}", fontsize=11, ha="center", va="center", bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 1.5})
+        plt.text(p1[0], p1[1], f"E{electrode_index + 1}\nGT: {gt_effective_mm[electrode_index]:.1f}\nP: {predicted_fat_mm[electrode_index]:.1f}\nΔ: {error_mm:+.1f}", fontsize=11, ha="center", va="center", bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 1.5})
 
     plt.scatter(electrode_xy[:, 0], electrode_xy[:, 1], edgecolors="black", linewidths=1.2, s=110, zorder=5)
 
@@ -689,10 +702,24 @@ def plot_test_prediction(sample_index: int):
     plt.tight_layout()
     plt.show()
 
-plot_end = min(len(test_dataset), TEST_PLOT_START_INDEX + NUMBER_OF_TEST_PLOTS)
 
-for sample_index in range(TEST_PLOT_START_INDEX, plot_end):
-    plot_test_prediction(sample_index)
+# plot_end = min(len(test_dataset), TEST_PLOT_START_INDEX + NUMBER_OF_TEST_PLOTS)
+
+# for sample_index in range(TEST_PLOT_START_INDEX, plot_end):
+#     plot_test_prediction(sample_index)
+
+with h5py.File(TEST_H5_PATH, "r") as f:
+    sides = f["side"].asstr()[:]
+
+right_indices = np.where(sides == "Right")[0]
+left_indices = np.where(sides == "Left")[0]
+
+for sample_index in right_indices[:NUMBER_OF_TEST_PLOTS]:
+    plot_test_prediction(int(sample_index))
+
+for sample_index in left_indices[:NUMBER_OF_TEST_PLOTS]:
+    plot_test_prediction(int(sample_index))
+
 
 train_dataset.close()
 val_dataset.close()
