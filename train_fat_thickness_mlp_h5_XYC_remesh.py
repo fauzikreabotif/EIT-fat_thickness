@@ -41,16 +41,21 @@ from utilities_fat_thickness_XYC_fresh_calfNbone_remesh_skin_tissuevar import (
 # =========================================================
 # Settings
 # =========================================================
-ROOT_DATA = ("/mnt/Ubuntu01/lymphedema/Rizki/fat_thickness/data_simulation/data_noise00_skin04_25_fat04_25_circum3045_fresh_remesh_propvar_10/Right-Left")
+# ROOT_DATA = ("/mnt/Ubuntu01/lymphedema/Rizki/fat_thickness/data_simulation/data_noise00_skin04_25_fat04_25_circum3045_fresh_remesh_propvar_10/Right-Left")
+
+ROOT_DATA = (r"H:\temporary\output_fat_thickness\data_noise00_skin04_25_fat04_25_circum3045_fresh_remesh_propvar_10\Right-Left")
+
 
 TRAIN_H5_PATH = os.path.join(ROOT_DATA, "training", "fat_dataset_training_bilateral.h5")
 VAL_H5_PATH = os.path.join(ROOT_DATA, "val", "fat_dataset_val_bilateral.h5")
 TEST_H5_PATH = os.path.join(ROOT_DATA, "testing", "fat_dataset_testing_bilateral.h5")
-OUTPUT_DIR = os.path.join(ROOT_DATA, "results_XYC_remesh_8freqs_transformer_noise_30")
-TRAIN_MAX_NOISE = 0.3       # 0.10 = 10%
+target_type="skin_fat"
+OUTPUT_DIR = os.path.join(ROOT_DATA, f"results_XYC_remesh_8freqs_transformer_noise_5_{target_type}")
+TRAIN_MAX_NOISE = 0.05       # 0.10 = 10%
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-protocol_csv_path ='new_bilateral/calf_quasi_16_0-15_stim_.csv'
+# protocol_csv_path ='new_bilateral/calf_quasi_16_0-15_stim_.csv'
+protocol_csv_path =r'C:\Users\takeiken-c135\OneDrive - 国立大学法人千葉大学\My research\Fat thickness\DL_fatThickness\new_bilateral\calf_quasi_16_0-15_stim_.csv'
 
 #================  Model ==============
 flatten_input=False
@@ -133,39 +138,6 @@ def test_file_has_skin(h5_path):
     return has_skin
 
 
-def load_test_geometry(h5_path, sample_index):
-    f = h5py.File(h5_path, "r")
-
-    geometry = {}
-    try:
-        geometry["side"] = f["side"].asstr()[sample_index]
-    except:
-        geometry["side"] = ''
-    geometry["nodes"] = np.asarray(load_packed_geometry(f, "mesh_nodes", "mesh_nodes_offsets", sample_index))
-    geometry["elements"] = np.asarray(load_packed_geometry(f, "mesh_elements", "mesh_elements_offsets", sample_index), dtype=np.int64)
-    geometry["calf_boundary"] = np.asarray(load_packed_geometry(f, "calf_boundary_points", "calf_boundary_points_offsets", sample_index))
-    geometry["gt_fat_boundary"] = np.asarray(load_packed_geometry(f, "fat_boundary_points", "fat_boundary_points_offsets", sample_index))
-    geometry["tibia_boundary"] = np.asarray(load_packed_geometry(f, "tibia_boundary_points", "tibia_boundary_points_offsets", sample_index))
-    geometry["fibula_boundary"] = np.asarray(load_packed_geometry(f, "fibula_boundary_points", "fibula_boundary_points_offsets", sample_index))
-    geometry["electrode_xy"] = np.asarray(f["electrode_xy"][sample_index])
-    geometry["gt_outer_points"] = np.asarray(f["us_outer_points"][sample_index])
-    geometry["gt_inner_points"] = np.asarray(f["us_inner_points"][sample_index])
-    geometry["ground_truth_mm"] = np.asarray(f["Y"][sample_index])
-    geometry["circumference_mm"] = float(np.asarray(f["circumference_mm"][sample_index]).reshape(-1)[0])
-    geometry["has_skin"] = False
-
-    skin_keys = ["skin_fat_boundary_points", "skin_fat_boundary_points_offsets", "us_skin_inner_points", "effective_skin_mm"]
-
-    if all(key in f for key in skin_keys):
-        geometry["skin_fat_boundary"] = np.asarray(load_packed_geometry(f, "skin_fat_boundary_points", "skin_fat_boundary_points_offsets", sample_index))
-        geometry["gt_skin_inner_points"] = np.asarray(f["us_skin_inner_points"][sample_index])
-        geometry["effective_skin_mm"] = np.asarray(f["effective_skin_mm"][sample_index])
-        geometry["has_skin"] = True
-
-    f.close()
-
-    return geometry
-
 
 # =========================================================
 # Circumference statistics
@@ -194,6 +166,7 @@ print("Device:", DEVICE)
 # =========================================================
 train_dataset = FatThicknessH5Dataset(
                 TRAIN_H5_PATH,
+                target_type = target_type,
                 flatten_input=flatten_input,
                 frequency_indices=FREQUENCY_INDICES,
                 apply_noise=TRAIN_APPLY_NOISE,
@@ -203,6 +176,7 @@ train_dataset = FatThicknessH5Dataset(
                 )
 val_dataset = FatThicknessH5Dataset(
                 VAL_H5_PATH,
+                target_type = target_type,
                 flatten_input=flatten_input,
                 frequency_indices=FREQUENCY_INDICES,
                 # Validation remains CLEAN
@@ -210,10 +184,12 @@ val_dataset = FatThicknessH5Dataset(
                 )
 test_dataset = FatThicknessH5Dataset(
                 TEST_H5_PATH,
+                target_type = target_type,
                 flatten_input=flatten_input,
                 frequency_indices=FREQUENCY_INDICES,
                 # Test remains CLEAN
                 apply_noise=False,
+                return_geometry=True,
                 )
 
 print("Train samples:", len(train_dataset))
@@ -224,7 +200,7 @@ print("Y:", y.shape, y.dtype)
 print("C:", c.shape, c.dtype)
 x, y, c = val_dataset[0]
 print("Val X:", x.shape)
-x, y, c = test_dataset[0]
+x, y, c, geometry = test_dataset[0]
 print("Test X:", x.shape)
 print("HDF5 loaders OK.")
 
@@ -252,10 +228,10 @@ print("Output dimension:", OUTPUT_DIM)
 print("Circumference dimension:", CIRCUMFERENCE_DIM)
 
 
-def make_loader(dataset, shuffle=False, sampler=None):
+def make_loader(dataset, batch_size=1, shuffle=False, sampler=None):
     return DataLoader(
         dataset,
-        batch_size=BATCH_SIZE,
+        batch_size=batch_size,
         shuffle=shuffle if sampler is None else False,
         sampler=sampler,
         num_workers=NUM_WORKERS,
@@ -265,8 +241,8 @@ def make_loader(dataset, shuffle=False, sampler=None):
     )
 
 
-val_loader = make_loader(val_dataset, shuffle=False)
-test_loader = make_loader(test_dataset, shuffle=False)
+val_loader = make_loader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+test_loader = make_loader(test_dataset, batch_size=1, shuffle=False)
 
 
 # =========================================================
@@ -353,8 +329,11 @@ def run_epoch(model, loader, criterion, optimizer=None):
     total_squared_error = 0.0
     total_values = 0
     total_samples = 0
-
-    for x, y, c in loader:
+    
+    for batch in loader:
+        x, y, c = batch[:3]
+        # geometry = batch[3] if len(batch) > 3 else None
+        
         x = x.to(DEVICE, non_blocking=True)
         y = y.to(DEVICE, non_blocking=True)
         c = prepare_circumference(c)
@@ -420,7 +399,7 @@ for epoch in range(1, EPOCHS + 1):
     epoch_start = time.perf_counter()
 
     if USE_FULL_TRAINING_SET_EACH_EPOCH:
-        train_loader = make_loader(train_dataset, shuffle=True)
+        train_loader = make_loader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     else:
         if index_pointer + samples_per_epoch > len(train_dataset):
             rng.shuffle(all_train_indices)
@@ -547,7 +526,7 @@ print("Test HDF5 contains skin:", TEST_HAS_SKIN)
 
 
 def predict_one_test_sample(sample_index: int):
-    x_test, y_test, c_test = test_dataset[sample_index]
+    x_test, y_test, c_test, geometry = test_dataset[sample_index]
     x_input = x_test.reshape(1, -1).to(DEVICE) if MODEL_TYPE == "mlp_basic" else x_test.unsqueeze(0).to(DEVICE)
     c_input = prepare_circumference(c_test.reshape(1, -1))
 
@@ -557,13 +536,11 @@ def predict_one_test_sample(sample_index: int):
     predicted_mm = prediction.squeeze(0).cpu().numpy().astype(np.float64)
     ground_truth_mm = y_test.cpu().numpy().astype(np.float64)
 
-    return predicted_mm, ground_truth_mm
+    return predicted_mm, ground_truth_mm, geometry
 
 
 def plot_test_prediction(sample_index: int):
-    predicted_fat_mm, ground_truth_fat_mm = predict_one_test_sample(sample_index)
-    predicted_fat_for_geometry = np.maximum(predicted_fat_mm, 0.0)
-    geometry = load_test_geometry(TEST_H5_PATH, sample_index)
+    predicted_mm, ground_truth_mm, geometry = predict_one_test_sample(sample_index)
     
     side = geometry["side"]
     nodes = geometry["nodes"]
@@ -582,31 +559,69 @@ def plot_test_prediction(sample_index: int):
         gt_skin_fat_boundary = geometry["skin_fat_boundary"]
         gt_skin_inner_points = geometry["gt_skin_inner_points"]
         gt_skin_mm = np.asarray(geometry["effective_skin_mm"], dtype=np.float64)
-        result = create_skin_fat_muscle_boundary_polygons(calf_boundary=calf_boundary, electrode_xy=electrode_xy, skin_thickness_mm=gt_skin_mm, fat_thickness_mm=predicted_fat_for_geometry, circumference_mm=circumference_mm, tibia_boundary=tibia_boundary, fibula_boundary=fibula_boundary, bone_margin_mm=0.0)
+        if target_type =="skin_fat":
+            predicted_fat_for_geometry = np.maximum(predicted_mm - gt_skin_mm, 0.0)
+            fat_line_start = gt_outer_points
+        else:
+            predicted_fat_for_geometry = np.maximum(predicted_mm, 0.0)
+            fat_line_start = gt_skin_inner_points
+        
+        result = create_skin_fat_muscle_boundary_polygons(
+            calf_boundary=calf_boundary,
+            electrode_xy=electrode_xy,
+            skin_thickness_mm=gt_skin_mm,
+            fat_thickness_mm=predicted_fat_for_geometry,
+            circumference_mm=circumference_mm,
+            tibia_boundary=tibia_boundary,
+            fibula_boundary=fibula_boundary,
+            bone_margin_mm=0.0
+        )
         pred_fat_boundary = result[1]
         pred_effective_mm = np.asarray(result[-1], dtype=np.float64)
-        fat_line_start = gt_skin_inner_points
+    
     else:
-        result = create_fat_muscle_boundary_polygon(calf_boundary=calf_boundary, electrode_xy=electrode_xy, fat_thickness_mm=predicted_fat_for_geometry, circumference_mm=circumference_mm, tibia_boundary=tibia_boundary, fibula_boundary=fibula_boundary, bone_margin_mm=0.0)
+        if target_type == "skin_fat":
+            raise ValueError("Skin geometry is required for skin_fat target.")
+    
+        predicted_fat_for_geometry = np.maximum(predicted_mm, 0.0)
+    
+        result = create_fat_muscle_boundary_polygon(
+            calf_boundary=calf_boundary,
+            electrode_xy=electrode_xy,
+            fat_thickness_mm=predicted_fat_for_geometry,
+            circumference_mm=circumference_mm,
+            tibia_boundary=tibia_boundary,
+            fibula_boundary=fibula_boundary,
+            bone_margin_mm=0.0
+        )
         pred_fat_boundary = result[0]
         pred_effective_mm = np.asarray(result[-1], dtype=np.float64)
         fat_line_start = gt_outer_points
-
-    gt_effective_mm = np.asarray(ground_truth_fat_mm, dtype=np.float64)
-    sample_mae = float(np.mean(np.abs(predicted_fat_mm - gt_effective_mm)))
-    sample_rmse = float(np.sqrt(np.mean((predicted_fat_mm - gt_effective_mm) ** 2)))
-
+    
+    # ==========================================
+    # Evaluation
+    # ==========================================
+    gt_effective_mm = np.asarray(ground_truth_mm, dtype=np.float64)
+    
+    sample_mae = float(np.mean(np.abs(predicted_mm - gt_effective_mm)))
+    sample_rmse = float(np.sqrt(np.mean(
+        (predicted_mm - gt_effective_mm) ** 2
+    )))
+    
+    anatomy_text = "Skin + Fat" if target_type == "skin_fat" else "Fat only"
+    
     print(f"\nSample {sample_index}")
-    print("Skin included:", has_skin)
-    print("Ground truth fat [mm]:", np.round(gt_effective_mm, 2))
-    print("Raw prediction fat [mm]:", np.round(predicted_fat_mm, 2))
-    print("Negative predictions:", int(np.sum(predicted_fat_mm < 0)))
-
+    print("Target:", anatomy_text)
+    print("Ground truth [mm]:", np.round(gt_effective_mm, 2))
+    print("Raw prediction [mm]:", np.round(predicted_mm, 2))
+    print("Negative predictions:", int(np.sum(predicted_mm < 0)))
+    
     if has_skin:
         print("Ground truth skin [mm]:", np.round(gt_skin_mm, 2))
-
+    
     print(f"Sample MAE: {sample_mae:.4f} mm")
     print(f"Sample RMSE: {sample_rmse:.4f} mm")
+
 
     plt.figure(figsize=(9, 9))
     plt.triplot(nodes[:, 0], nodes[:, 1], tri, linewidth=0.35, alpha=0.25)
@@ -637,8 +652,8 @@ def plot_test_prediction(sample_index: int):
 
     for electrode_index, (p0, p1) in enumerate(zip(fat_line_start, gt_inner_points)):
         plt.plot([p0[0], p1[0]], [p0[1], p1[1]], "r-", linewidth=1.8)
-        error_mm = predicted_fat_mm[electrode_index] - gt_effective_mm[electrode_index]
-        plt.text(p1[0], p1[1], f"E{electrode_index + 1}\nGT: {gt_effective_mm[electrode_index]:.1f}\nP: {predicted_fat_mm[electrode_index]:.1f}\nΔ: {error_mm:+.1f}", fontsize=11, ha="center", va="center", bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 1.5})
+        error_mm = predicted_mm[electrode_index] - gt_effective_mm[electrode_index]
+        plt.text(p1[0], p1[1], f"E{electrode_index + 1}\nGT: {gt_effective_mm[electrode_index]:.1f}\nP: {predicted_mm[electrode_index]:.1f}\nΔ: {error_mm:+.1f}", fontsize=11, ha="center", va="center", bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 1.5})
 
     plt.scatter(electrode_xy[:, 0], electrode_xy[:, 1], edgecolors="black", linewidths=1.2, s=110, zorder=5)
 
@@ -661,46 +676,46 @@ def plot_test_prediction(sample_index: int):
     plt.savefig(figure_path, dpi=200, bbox_inches="tight")
     plt.show()
     
-    #================== plot only the GT
-    plt.figure(figsize=(9, 9))
-    plt.triplot(nodes[:, 0], nodes[:, 1], tri, linewidth=0.35, alpha=0.25)
+    # #================== plot only the GT
+    # plt.figure(figsize=(9, 9))
+    # plt.triplot(nodes[:, 0], nodes[:, 1], tri, linewidth=0.35, alpha=0.25)
 
-    if has_skin:
-        plt.fill(calf_boundary[:, 0], calf_boundary[:, 1], color="mistyrose", alpha=0.8, label="Skin")
-        plt.fill(gt_skin_fat_boundary[:, 0], gt_skin_fat_boundary[:, 1], color="khaki", alpha=0.8, label="Fat")
-        plt.fill(gt_fat_boundary[:, 0], gt_fat_boundary[:, 1], color="lightcoral", alpha=0.35, label="Muscle")
-    else:
-        plt.fill(calf_boundary[:, 0], calf_boundary[:, 1], color="khaki", alpha=0.55, label="Fat")
-        plt.fill(gt_fat_boundary[:, 0], gt_fat_boundary[:, 1], color="lightcoral", alpha=0.35, label="Muscle")
+    # if has_skin:
+    #     plt.fill(calf_boundary[:, 0], calf_boundary[:, 1], color="mistyrose", alpha=0.8, label="Skin")
+    #     plt.fill(gt_skin_fat_boundary[:, 0], gt_skin_fat_boundary[:, 1], color="khaki", alpha=0.8, label="Fat")
+    #     plt.fill(gt_fat_boundary[:, 0], gt_fat_boundary[:, 1], color="lightcoral", alpha=0.35, label="Muscle")
+    # else:
+    #     plt.fill(calf_boundary[:, 0], calf_boundary[:, 1], color="khaki", alpha=0.55, label="Fat")
+    #     plt.fill(gt_fat_boundary[:, 0], gt_fat_boundary[:, 1], color="lightcoral", alpha=0.35, label="Muscle")
 
-    plt.fill(tibia_boundary[:, 0], tibia_boundary[:, 1], color="lightsteelblue", alpha=0.9)
-    plt.fill(fibula_boundary[:, 0], fibula_boundary[:, 1], color="lightsteelblue", alpha=0.9)
-    plt.plot(calf_boundary[:, 0], calf_boundary[:, 1], "k-", linewidth=2.5, label="Calf surface")
+    # plt.fill(tibia_boundary[:, 0], tibia_boundary[:, 1], color="lightsteelblue", alpha=0.9)
+    # plt.fill(fibula_boundary[:, 0], fibula_boundary[:, 1], color="lightsteelblue", alpha=0.9)
+    # plt.plot(calf_boundary[:, 0], calf_boundary[:, 1], "k-", linewidth=2.5, label="Calf surface")
 
-    if has_skin:
-        plt.plot(gt_skin_fat_boundary[:, 0], gt_skin_fat_boundary[:, 1], "m-", linewidth=2.2, label="Skin-fat boundary")
+    # if has_skin:
+    #     plt.plot(gt_skin_fat_boundary[:, 0], gt_skin_fat_boundary[:, 1], "m-", linewidth=2.2, label="Skin-fat boundary")
 
-    plt.plot(gt_fat_boundary[:, 0], gt_fat_boundary[:, 1], "r-", linewidth=2.5, label="GT fat-muscle")
-    plt.plot(tibia_boundary[:, 0], tibia_boundary[:, 1], "b-", linewidth=1.8, label="Tibia")
-    plt.plot(fibula_boundary[:, 0], fibula_boundary[:, 1], "c-", linewidth=1.8, label="Fibula")
+    # plt.plot(gt_fat_boundary[:, 0], gt_fat_boundary[:, 1], "r-", linewidth=2.5, label="GT fat-muscle")
+    # plt.plot(tibia_boundary[:, 0], tibia_boundary[:, 1], "b-", linewidth=1.8, label="Tibia")
+    # plt.plot(fibula_boundary[:, 0], fibula_boundary[:, 1], "c-", linewidth=1.8, label="Fibula")
 
-    if has_skin:
-        for p0, p1 in zip(gt_outer_points, gt_skin_inner_points):
-            plt.plot([p0[0], p1[0]], [p0[1], p1[1]], "m-", linewidth=1.3, alpha=0.8)
+    # if has_skin:
+    #     for p0, p1 in zip(gt_outer_points, gt_skin_inner_points):
+    #         plt.plot([p0[0], p1[0]], [p0[1], p1[1]], "m-", linewidth=1.3, alpha=0.8)
 
-    for electrode_index, (p0, p1) in enumerate(zip(fat_line_start, gt_inner_points)):
-        plt.plot([p0[0], p1[0]], [p0[1], p1[1]], "r-", linewidth=1.8)
-        plt.text(p1[0], p1[1], f"E{electrode_index + 1}\nGT: {gt_effective_mm[electrode_index]:.1f}\nP: {predicted_fat_mm[electrode_index]:.1f}\nΔ: {error_mm:+.1f}", fontsize=11, ha="center", va="center", bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 1.5})
+    # for electrode_index, (p0, p1) in enumerate(zip(fat_line_start, gt_inner_points)):
+    #     plt.plot([p0[0], p1[0]], [p0[1], p1[1]], "r-", linewidth=1.8)
+    #     plt.text(p1[0], p1[1], f"E{electrode_index + 1}\nGT: {gt_effective_mm[electrode_index]:.1f}\nP: {predicted_fat_mm[electrode_index]:.1f}\nΔ: {error_mm:+.1f}", fontsize=11, ha="center", va="center", bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 1.5})
 
-    plt.scatter(electrode_xy[:, 0], electrode_xy[:, 1], edgecolors="black", linewidths=1.2, s=110, zorder=5)
+    # plt.scatter(electrode_xy[:, 0], electrode_xy[:, 1], edgecolors="black", linewidths=1.2, s=110, zorder=5)
 
-    anatomy_text = "Skin + Fat" if has_skin else "Fat only"
-    plt.title(f"{MODEL_TYPE} Fat-Thickness Prediction on Remeshed Geometry\n{anatomy_text} | Sample {sample_index} | C = {circumference_mm:.1f} mm | MAE = {sample_mae:.3f} mm | RMSE = {sample_rmse:.3f} mm", fontsize=15)
-    plt.axis("equal")
-    plt.axis("off")
-    plt.legend(loc="upper left", fontsize=11)
-    plt.tight_layout()
-    plt.show()
+    # anatomy_text = "Skin + Fat" if has_skin else "Fat only"
+    # plt.title(f"{MODEL_TYPE} Fat-Thickness Prediction on Remeshed Geometry\n{anatomy_text} | Sample {sample_index} | C = {circumference_mm:.1f} mm | MAE = {sample_mae:.3f} mm | RMSE = {sample_rmse:.3f} mm", fontsize=15)
+    # plt.axis("equal")
+    # plt.axis("off")
+    # plt.legend(loc="upper left", fontsize=11)
+    # plt.tight_layout()
+    # plt.show()
 
 
 # plot_end = min(len(test_dataset), TEST_PLOT_START_INDEX + NUMBER_OF_TEST_PLOTS)

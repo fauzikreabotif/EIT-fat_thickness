@@ -2010,6 +2010,18 @@ class FatSkinThicknessEITDataset(Dataset):
 # HDF5 dataset
 # =========================================================
 
+def load_packed_geometry(f, data_key, offsets_key, sample_index):
+    """Read one variable-length sample from packed HDF5 geometry arrays."""
+    if data_key not in f or offsets_key not in f:
+        raise KeyError(f"Missing packed geometry: {data_key} / {offsets_key}")
+    offsets = f[offsets_key]
+    i = int(sample_index)
+    if i < 0 or i + 1 >= len(offsets):
+        raise IndexError(f"Invalid geometry sample index: {i}")
+    begin, end = int(offsets[i]), int(offsets[i + 1])
+    return np.asarray(f[data_key][begin:end])
+
+
 class FatThicknessH5Dataset(Dataset):
     """
     HDF5 dataset loader for calf fat-thickness EIT deep learning.
@@ -2031,6 +2043,13 @@ class FatThicknessH5Dataset(Dataset):
     Optional:
     requested_Y : [N, 16]
     bone_clipped : [N, 16]
+    
+    example of use: 
+    visual_dataset = FatThicknessH5Dataset(
+    h5_path=TEST_H5_PATH,
+    target_type="skin_fat",
+    return_geometry=True,)
+    x, y, c, geometry = visual_dataset[0]
     """
 
     def __init__(
@@ -2049,8 +2068,14 @@ class FatThicknessH5Dataset(Dataset):
         return_bone_clipped=False,
         
         seed=None,
+        target_type="fat", #(fat or skin_fat)
+        return_geometry=False,
     ):
         self.h5_path = h5_path
+        self.target_type = str(target_type).lower()
+        self.return_geometry = bool(return_geometry)
+        if self.target_type not in ("fat", "skin_fat"):
+            raise ValueError("target_type must be fat or skin_fat")
         self.flatten_input = bool(flatten_input)
         self.frequency_indices = frequency_indices
         self.apply_noise = bool(apply_noise)
@@ -2083,6 +2108,11 @@ class FatThicknessH5Dataset(Dataset):
                 if key not in h5_file:
                     raise KeyError(f"'{key}' was not found in {self.h5_path}")
 
+            if self.target_type == "skin_fat":
+                if "effective_skin_mm" not in h5_file:
+                    raise KeyError("skin_fat target requires effective_skin_mm in HDF5")
+                if h5_file["effective_skin_mm"].shape != h5_file["Y"].shape:
+                    raise ValueError("effective_skin_mm and Y must have identical shapes")
             self.num_samples = h5_file["X"].shape[0]
             if h5_file["Y"].shape[0] != self.num_samples or h5_file["C"].shape[0] != self.num_samples:
                 raise ValueError("X, Y, and C must contain the same number of samples.")
@@ -2270,7 +2300,10 @@ class FatThicknessH5Dataset(Dataset):
         # ---------------------------------------------
         # Y and circumference
         # ---------------------------------------------
-        y = np.asarray(self.Y[index], dtype=np.float32)
+        fat_y = np.asarray(self.Y[index], dtype=np.float32)
+        y = fat_y.copy()
+        if self.target_type == "skin_fat":
+            y += np.asarray(self.h5_file["effective_skin_mm"][index], dtype=np.float32)
         c = np.asarray(self.C[index], dtype=np.float32).reshape(-1)
         
         if self.flatten_input:
@@ -2288,7 +2321,44 @@ class FatThicknessH5Dataset(Dataset):
             clipped = np.asarray(self.bone_clipped[index], dtype=np.uint8)
             outputs.append(torch.from_numpy(clipped))
 
+        if self.return_geometry:
+            outputs.append(self._load_geometry(index, y, fat_y))
+
         return tuple(outputs)
+
+    def _load_geometry(self, index, target_y, fat_y):
+        f = self.h5_file
+        g = {}
+        g["side"] = str(f["side"].asstr()[index]) if "side" in f else ""
+        packed = {
+            "nodes": ("mesh_nodes", "mesh_nodes_offsets"),
+            "elements": ("mesh_elements", "mesh_elements_offsets"),
+            "calf_boundary": ("calf_boundary_points", "calf_boundary_points_offsets"),
+            "gt_fat_boundary": ("fat_boundary_points", "fat_boundary_points_offsets"),
+            "tibia_boundary": ("tibia_boundary_points", "tibia_boundary_points_offsets"),
+            "fibula_boundary": ("fibula_boundary_points", "fibula_boundary_points_offsets"),
+        }
+        for name, (data_key, offsets_key) in packed.items():
+            arr = load_packed_geometry(f, data_key, offsets_key, index)
+            g[name] = arr.astype(np.int64) if name == "elements" else arr
+        for name, key in (
+            ("electrode_xy", "electrode_xy"),
+            ("gt_outer_points", "us_outer_points"),
+            ("gt_inner_points", "us_inner_points"),
+        ):
+            g[name] = np.asarray(f[key][index])
+        g["ground_truth_mm"] = target_y.copy()
+        g["ground_truth_fat_mm"] = fat_y.copy()
+        g["circumference_mm"] = float(np.asarray(f["circumference_mm"][index]).reshape(-1)[0])
+        skin_keys = ("skin_fat_boundary_points", "skin_fat_boundary_points_offsets",
+                     "us_skin_inner_points", "effective_skin_mm")
+        g["has_skin"] = all(key in f for key in skin_keys)
+        if g["has_skin"]:
+            g["skin_fat_boundary"] = load_packed_geometry(
+                f, "skin_fat_boundary_points", "skin_fat_boundary_points_offsets", index)
+            g["gt_skin_inner_points"] = np.asarray(f["us_skin_inner_points"][index])
+            g["effective_skin_mm"] = np.asarray(f["effective_skin_mm"][index])
+        return g
 
     def close(self):
         """Explicitly close the HDF5 file."""
@@ -2303,3 +2373,5 @@ class FatThicknessH5Dataset(Dataset):
 
     def __del__(self):
         self.close()
+
+
