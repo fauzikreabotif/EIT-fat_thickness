@@ -89,14 +89,17 @@ TRANSFER_STRATEGY = "_" if EXPERIMENT_MODE == "scratch" else TRANSFER_STRATEGY
 # Best checkpoint obtained from simulation training.
 PRETRAINED_CHECKPOINT = Path(
     r"H:\temporary\output_fat_thickness\data_noise00_skin05_25_fat04_25_circum3045_fresh_remesh"
-    r"\results_XYC_remesh_8freqs_transformer_noise_30\best_fat_thickness_mlp_XYC_remesh.pth"
+    r"\results_XYC_remesh_8freqs_transformer_noise_5\best_fat_thickness_mlp_XYC_remesh.pth"
 )
 
 # Needed only for transformer.
-PROTOCOL_CSV_PATH = Path(r"Right_calf\calf_quasi_16_0-15_stim_.csv")
+PROTOCOL_CSV_PATH = Path(r"new_bilateral\calf_quasi_16_0-15_stim_.csv")
 
-OUTPUT_DIR = Path(os.path.join(r"H:\temporary\output_fat_thickness\data_noise00_skin05_25_fat04_25_circum3045_fresh_remesh", 
-                               "noise_30"+ EXPERIMENT_MODE+'_'+TRANSFER_STRATEGY, MODEL_TYPE))
+OUTPUT_DIR = Path(os.path.join(r"H:\temporary\wps\Right-Left", 
+                               "noise_5"+ EXPERIMENT_MODE+'_'+TRANSFER_STRATEGY, MODEL_TYPE))
+
+
+
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
