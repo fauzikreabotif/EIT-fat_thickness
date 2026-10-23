@@ -2067,6 +2067,8 @@ class FatThicknessH5Dataset(Dataset):
         return_requested=False,
         return_bone_clipped=False,
         
+        impedance_component="complex",  # "complex", "real", "imag"
+        
         seed=None,
         target_type="fat", #(fat or skin_fat)
         return_geometry=False,
@@ -2083,6 +2085,7 @@ class FatThicknessH5Dataset(Dataset):
         self.random_noise_std = bool(random_noise_std)
         self.return_requested = bool(return_requested)
         self.return_bone_clipped = bool(return_bone_clipped)
+        self.impedance_component = impedance_component
         self.seed = seed
         self.rng = None
         if self.noise_std < 0.0:
@@ -2297,6 +2300,17 @@ class FatThicknessH5Dataset(Dataset):
         # ---------------------------------------------
         x = self._add_complex_gaussian_noise(x)
         
+        # Select impedance component
+        if self.impedance_component == "real":
+            x = x[:, 0:1, :]
+        
+        elif self.impedance_component == "imag":
+            x = x[:, 1:2, :]
+        
+        elif self.impedance_component != "complex":
+            raise ValueError(
+                f"Unknown impedance_component: {self.impedance_component}"
+            )
         # ---------------------------------------------
         # Y and circumference
         # ---------------------------------------------

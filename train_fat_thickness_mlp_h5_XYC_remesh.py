@@ -50,7 +50,10 @@ TRAIN_H5_PATH = os.path.join(ROOT_DATA, "training", "fat_dataset_training_bilate
 VAL_H5_PATH = os.path.join(ROOT_DATA, "val", "fat_dataset_val_bilateral.h5")
 TEST_H5_PATH = os.path.join(ROOT_DATA, "testing", "fat_dataset_testing_bilateral.h5")
 target_type="skin_fat"
-OUTPUT_DIR = os.path.join(ROOT_DATA, f"results_XYC_remesh_8freqs_transformer_noise_5_{target_type}")
+IMPEDANCE_COMPONENT = "real"  # "complex", "real", "imag"
+n_components = 2 if IMPEDANCE_COMPONENT=="complex" else 1
+
+OUTPUT_DIR = os.path.join(ROOT_DATA, f"{IMPEDANCE_COMPONENT}_results_XYC_remesh_8freqs_transformer_noise_5_{target_type}")
 TRAIN_MAX_NOISE = 0.05       # 0.10 = 10%
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -167,6 +170,7 @@ print("Device:", DEVICE)
 train_dataset = FatThicknessH5Dataset(
                 TRAIN_H5_PATH,
                 target_type = target_type,
+                impedance_component = IMPEDANCE_COMPONENT, 
                 flatten_input=flatten_input,
                 frequency_indices=FREQUENCY_INDICES,
                 apply_noise=TRAIN_APPLY_NOISE,
@@ -177,6 +181,7 @@ train_dataset = FatThicknessH5Dataset(
 val_dataset = FatThicknessH5Dataset(
                 VAL_H5_PATH,
                 target_type = target_type,
+                impedance_component = IMPEDANCE_COMPONENT, 
                 flatten_input=flatten_input,
                 frequency_indices=FREQUENCY_INDICES,
                 # Validation remains CLEAN
@@ -185,6 +190,7 @@ val_dataset = FatThicknessH5Dataset(
 test_dataset = FatThicknessH5Dataset(
                 TEST_H5_PATH,
                 target_type = target_type,
+                impedance_component = IMPEDANCE_COMPONENT, 
                 flatten_input=flatten_input,
                 frequency_indices=FREQUENCY_INDICES,
                 # Test remains CLEAN
@@ -252,12 +258,14 @@ if MODEL_TYPE == "mlp":
     model = FatThicknessMLP(
         input_dim=INPUT_DIM,
         circumference_dim=CIRCUMFERENCE_DIM,
+        n_components = n_components, 
         output_dim=OUTPUT_DIM,
         dropout=DROPOUT,
     ).to(DEVICE)
 elif MODEL_TYPE == "mlp_basic":
     model = FatThicknessMLP_basic(
         input_dim=INPUT_DIM,
+        n_components = n_components, 
         circumference_dim=CIRCUMFERENCE_DIM,
         output_dim=OUTPUT_DIM,
         dropout=DROPOUT,
@@ -271,7 +279,7 @@ elif MODEL_TYPE == "transformer":
     model = ProtocolAwareFatThicknessTransformer(
         protocol_indices=protocol_indices,
         n_frequencies=N_SELECTED_FREQUENCIES,
-        n_components=2,
+        n_components = n_components, 
         n_electrodes=16,
         output_dim=16,
         circumference_dim=CIRCUMFERENCE_DIM,

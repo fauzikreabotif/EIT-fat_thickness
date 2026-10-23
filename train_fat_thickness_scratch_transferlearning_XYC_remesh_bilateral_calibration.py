@@ -86,13 +86,16 @@ MODEL_TYPE = "transformer"  # "mlp_basic", "mlp_film", or "transformer"
 EXPERIMENT_MODE = "transfer"  # "transfer" or "scratch"
 TRANSFER_STRATEGY = "head_then_full" # head_then_full, direct_full
 
+IMPEDANCE_COMPONENT = "real"  # "complex", "real", "imag"
+n_components = 2 if IMPEDANCE_COMPONENT=="complex" else 1
+
 TRANSFER_STRATEGY = "_" if EXPERIMENT_MODE == "scratch" else TRANSFER_STRATEGY
 # Best checkpoint obtained from simulation training.
 # PRETRAINED_CHECKPOINT = Path(
 #    r"H:\temporary\output_fat_thickness\data_noise00_skin04_25_fat04_25_circum3045_fresh_remesh_propvar_10"
 #    r"\Right-Left\results_XYC_remesh_8freqs_transformer_noise_20\best_fat_thickness_mlp_XYC_remesh.pth"
 #)
-PRETRAINED_CHECKPOINT = Path(r"H:\temporary\wps\Right-Left\results_XYC_remesh_8freqs_transformer_noise_5\best_fat_thickness_mlp_XYC_remesh.pth")
+PRETRAINED_CHECKPOINT = Path(r"H:\temporary\output_fat_thickness\data_noise00_skin04_25_fat04_25_circum3045_fresh_remesh_propvar_10\Right-Left\real_results_XYC_remesh_8freqs_transformer_noise_5_skin_fat\best_fat_thickness_mlp_XYC_remesh.pth")
 
 # Needed only for transformer.
 PROTOCOL_CSV_PATH = Path(r"new_bilateral\calf_quasi_16_0-15_stim_.csv")
@@ -127,7 +130,7 @@ OUTPUT_DIR = Path(r"H:\temporary\wps\Right-Left") / (
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 N_MEASUREMENTS = 208
-N_COMPONENTS = 2
+N_COMPONENTS = n_components.copy()
 N_FREQUENCIES = N_SELECTED_FREQUENCIES
 N_ELECTRODES = 16
 N_LAYERS = 3
